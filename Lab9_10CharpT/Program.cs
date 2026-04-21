@@ -1,132 +1,129 @@
 ﻿using System;
+using System.Collections.Generic;
+using System.Diagnostics;
+using System.Threading.Tasks;
 
-    // 1. Оголошуємо делегат - це "шаблон" для методу, який буде обробляти подію
+namespace FacultyLife
+{
+    // Типи подій для статистики
+    public enum EventType { News, Exam }
+
+    // Клас для передачі даних події з пріоритетом
+    public class FacultyEvent
+    {
+        public string Content { get; set; }
+        public EventType Type { get; set; }
+        public int Priority { get; set; } // 1 - Високий, 2 - Середній, 3 - Низький
+        public int WorkTimeMs { get; set; } // Скільки часу триває подія
+
+        public FacultyEvent(string content, EventType type, int priority, int workTimeMs)
+        {
+            Content = content;
+            Type = type;
+            Priority = priority;
+            WorkTimeMs = workTimeMs;
+        }
+    }
+
     public delegate void FacultyEventHandler(string message);
 
-    // ==========================================
-    // ВИДАВЕЦЬ (Publisher): Клас Факультет
-    // ==========================================
     public class Faculty
     {
-        // 2. Створюємо події на основі делегата
         public event FacultyEventHandler OnNewsAnnounced;
         public event FacultyEventHandler OnExamStarted;
 
-        // Метод, що імітує публікацію новин
-        public void AnnounceNews(string news)
+        // Черга з пріоритетом (Елемент, Пріоритет)
+        private PriorityQueue<FacultyEvent, int> _eventQueue = new PriorityQueue<FacultyEvent, int>();
+        
+        // Статистика
+        public int TotalProcessed { get; private set; } = 0;
+
+        public void AddEventToQueue(FacultyEvent ev)
         {
-            Console.WriteLine($"\n[📢 ДЕКАНАТ]: Увага всім! {news}");
-            
-            // Якщо на подію хтось підписаний, викликаємо її
-            OnNewsAnnounced?.Invoke(news);
+            _eventQueue.Enqueue(ev, ev.Priority);
+            Console.WriteLine($"[📥 ЧЕРГА]: Додано {ev.Type} (Пріоритет: {ev.Priority}): {ev.Content}");
         }
 
-        // Метод, що імітує початок іспиту
-        public void StartExam(string subject)
+        // Асинхронний метод обробки всієї черги
+        public async Task ProcessAllEventsAsync()
         {
-            Console.WriteLine($"\n[🎓 ДЕКАНАТ]: Розпочинається іспит з дисципліни '{subject}'.");
-            
-            // Запускаємо подію
-            OnExamStarted?.Invoke(subject);
+            Stopwatch sw = Stopwatch.StartNew();
+            Console.WriteLine("\n=== ПОЧАТОК ОБРОБКИ ЗАВДАНЬ ФАКУЛЬТЕТОМ ===\n");
+
+            while (_eventQueue.Count > 0)
+            {
+                var ev = _eventQueue.Dequeue();
+                
+                // Імітація підготовки (асинхронна затримка)
+                await Task.Delay(ev.WorkTimeMs);
+
+                if (ev.Type == EventType.News)
+                    OnNewsAnnounced?.Invoke(ev.Content);
+                else
+                    OnExamStarted?.Invoke(ev.Content);
+
+                TotalProcessed++;
+            }
+
+            sw.Stop();
+            Console.WriteLine($"\n=== СТАТИСТИКА ПЕРІОДУ ===");
+            Console.WriteLine($"Оброблено подій: {TotalProcessed}");
+            Console.WriteLine($"Загальний час роботи: {sw.ElapsedMilliseconds / 1000.0:F2} сек.");
         }
     }
 
-    // ==========================================
-    // ПІДПИСНИК 1: Клас Студент
-    // ==========================================
+    // Класи Студент та Викладач залишаються майже такими самими
     public class Student
     {
         public string Name { get; set; }
+        public Student(string name) => Name = name;
 
-        public Student(string name)
-        {
-            Name = name;
-        }
+        public void ReactToNews(string news) => 
+            Console.WriteLine($"  -> Студент {Name} отримав новину: '{news}'");
 
-        // Реакція студента на новину
-        public void ReactToNews(string news)
-        {
-            Console.WriteLine($"  -> Студент {Name} радіє або сумує через новину: '{news}'");
-        }
-
-        // Реакція студента на іспит
-        public void ReactToExam(string subject)
-        {
-            Console.WriteLine($"  -> Студент {Name} панікує, купує енергетик і йде здавати {subject}!");
-        }
+        public void ReactToExam(string subject) => 
+            Console.WriteLine($"  -> Студент {Name} терміново вчить {subject}!");
     }
 
-    // ==========================================
-    // ПІДПИСНИК 2: Клас Викладач
-    // ==========================================
     public class Teacher
     {
         public string Name { get; set; }
+        public Teacher(string name) => Name = name;
 
-        public Teacher(string name)
-        {
-            Name = name;
-        }
+        public void ReactToNews(string news) => 
+            Console.WriteLine($"  -> Викладач {Name} прочитав: '{news}'");
 
-        // Реакція викладача на новину
-        public void ReactToNews(string news)
-        {
-            Console.WriteLine($"  -> Викладач {Name} взяв до уваги новину: '{news}'");
-        }
-
-        // Реакція викладача на іспит
-        public void ReactToExam(string subject)
-        {
-            Console.WriteLine($"  -> Викладач {Name} суворо розкладає білети для іспиту з {subject}.");
-        }
+        public void ReactToExam(string subject) => 
+            Console.WriteLine($"  -> Викладач {Name} готує білети для {subject}.");
     }
 
-    // ==========================================
-    // ГОЛОВНА ПРОГРАМА
-    // ==========================================
     internal class Program
     {
-        static void Main(string[] args)
+        static async Task Main(string[] args)
         {
-            Console.OutputEncoding = System.Text.Encoding.UTF8; // Для коректного відображення української мови
+            Console.OutputEncoding = System.Text.Encoding.UTF8;
 
-            // Створюємо об'єкти
-            Faculty fikt = new Faculty(); // Наш факультет
-            
-            Student student1 = new Student("Олександр");
-            Student student2 = new Student("Марія");
-            Teacher teacher1 = new Teacher("Василь Петрович");
+            Faculty faculty = new Faculty();
+            Student s1 = new Student("Олександр");
+            Teacher t1 = new Teacher("Дмитро Іванович");
 
-            // 3. ПІДПИСКА НА ПОДІЇ (використовуємо оператор +=)
-            // Студенти та викладач підписуються на новини
-            fikt.OnNewsAnnounced += student1.ReactToNews;
-            fikt.OnNewsAnnounced += student2.ReactToNews;
-            fikt.OnNewsAnnounced += teacher1.ReactToNews;
+            // Підписка
+            faculty.OnNewsAnnounced += s1.ReactToNews;
+            faculty.OnNewsAnnounced += t1.ReactToNews;
+            faculty.OnExamStarted += s1.ReactToExam;
+            faculty.OnExamStarted += t1.ReactToExam;
 
-            // На іспит підписуються всі
-            fikt.OnExamStarted += student1.ReactToExam;
-            fikt.OnExamStarted += student2.ReactToExam;
-            fikt.OnExamStarted += teacher1.ReactToExam;
+            // Наповнюємо чергу різними подіями з різними пріоритетами
+            // Зверніть увагу: ми додаємо "Вихідний" першим, але з низьким пріоритетом (3)
+            faculty.AddEventToQueue(new FacultyEvent("Завтра вихідний", EventType.News, 3, 500));
+            faculty.AddEventToQueue(new FacultyEvent("Іспит з С#", EventType.Exam, 1, 1500));
+            faculty.AddEventToQueue(new FacultyEvent("Збори кафедри", EventType.News, 2, 800));
 
-            // ==========================================
-            // СИМУЛЯЦІЯ ЖИТТЯ ФАКУЛЬТЕТУ
-            // ==========================================
-            Console.WriteLine("=== СИМУЛЯЦІЯ ПОЧАЛАСЯ ===");
+            // Запускаємо асинхронну обробку
+            await faculty.ProcessAllEventsAsync();
 
-            // Деканат публікує новину
-            fikt.AnnounceNews("Завтра вихідний день на честь Дня Університету!");
-
-            // Деканат починає іспит
-            fikt.StartExam("Програмування (C#)");
-
-            // Відписка від події (наприклад, студент випустився або відрахований)
-            Console.WriteLine("\n[Система]: Студент Олександр відрахований і більше не отримує сповіщень.");
-            fikt.OnNewsAnnounced -= student1.ReactToNews;
-            fikt.OnExamStarted -= student1.ReactToExam;
-
-            // Нова подія (Олександр вже не відреагує)
-            fikt.AnnounceNews("Зміна розкладу на наступний тиждень.");
-            
-            Console.ReadLine();
+            Console.WriteLine("\nРобочий день завершено. Натисніть будь-яку клавішу...");
+            Console.ReadKey();
         }
     }
+}
